@@ -71,12 +71,17 @@ st.markdown("""
 
 # 2. Cấu hình API Key 
 # 2. Cấu hình API Key và Tự động chọn Model
+# 2. Cấu hình API Key (Chỉ dùng secrets để bảo mật tuyệt đối)
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    # Nếu chạy local, bạn có thể dán key trực tiếp vào đây để hết lỗi đỏ
-    genai.configure(api_key="AIzaSyClVM7p6Kb9xDY5m6aTgr_blhi4Dsk4MlU")
+    # Nếu chạy local mà chưa có file secrets.toml thì hiện cảnh báo
+    st.warning("⚠️ Chưa tìm thấy API Key. Nếu chạy local, hãy kiểm tra file secrets.toml")
+    st.stop()
 
+
+
+    
 # Cách này giúp lấy đúng model đang hoạt động, tránh lỗi 404 (Not Found)
 try:
     # Lấy danh sách các model mà API Key của bạn được phép dùng
