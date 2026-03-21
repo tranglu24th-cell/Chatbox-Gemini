@@ -81,13 +81,13 @@ else:
 
 
 
-    
+
 # Cách này giúp lấy đúng model đang hoạt động, tránh lỗi 404 (Not Found)
 try:
     # Lấy danh sách các model mà API Key của bạn được phép dùng
     models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     # Ưu tiên chọn bản flash cho nhanh, nếu không có thì lấy bản đầu tiên trong danh sách
-    selected_model = 'models/gemini-2.5-flash' if 'models/gemini-2.5-flash' in models else models[0]
+    selected_model = 'models/gemini-1.5-flash' if 'models/gemini-1.5-flash' in models else models[0]
     model = genai.GenerativeModel(selected_model)
 except Exception as e:
     st.error(f"Lỗi kết nối API: {e}")
@@ -116,14 +116,24 @@ if prompt := st.chat_input("Bạn muốn hỏi gì thế?"):
     with st.chat_message("assistant", avatar="🤖"):
         with st.spinner("Đang suy nghĩ..."):
             try:
+                # --- THÊM 3 DÒNG NÀY ĐỂ AI BIẾT NGÀY THÁNG ---
+                import datetime
+                today = datetime.datetime.now().strftime("%d/%m/%Y")
+                full_prompt = f"Hôm nay là ngày {today}. {prompt}"
                 # Gửi toàn bộ lịch sử để AI có "ngữ cảnh"
                 full_chat = model.start_chat(history=[
                     {"role": m["role"] == "assistant" and "model" or "user", "parts": [m["content"]]}
                     for m in st.session_state.messages[:-1]
                 ])
-                response = full_chat.send_message(prompt)
+                response = full_chat.send_message(full_prompt)
                 
                 st.markdown(response.text)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
             except Exception as e:
-                st.error(f"Lỗi rồi: {e}")
+             
+                if "429" in str(e):
+                    st.error("⚠️ Bạn hỏi nhanh quá! Đợi 1 phút để Google hồi phục lượt dùng nhé.")
+                elif "403" in str(e):
+                    st.error("🚫 API Key bị khóa. Hãy dán Key mới vào Secrets trên Streamlit.")
+                else:
+                    st.error(f"❌ Lỗi hệ thống: {e}")
