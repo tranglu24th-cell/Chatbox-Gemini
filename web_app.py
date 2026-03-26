@@ -1,64 +1,13 @@
 import streamlit as st
 import google.generativeai as genai
+import datetime
 
-
-# 3. Khởi tạo lịch sử chat nếu chưa có
-
-# Khởi tạo kho lưu trữ tất cả các cuộc hội thoại cũ
-if "all_chats" not in st.session_state:
-    st.session_state.all_chats = {}  # Lưu dưới dạng: { "Tiêu đề": [danh sách tin nhắn] }
-
-# Khởi tạo cuộc hội thoại hiện tại
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-#if "messages" not in st.session_state:
-    #st.session_state.messages = []
-
-# 1. Cấu hình trang web
+# --- 1. CẤU HÌNH TRANG WEB & GIAO DIỆN ---
 st.set_page_config(page_title="Gemini AI Chatbot", page_icon="🤖")
 st.title("Gemini AI Collaborator")
 st.caption("Một sản phẩm đồ án chạy bằng Python & Google Gemini")
-#------------------------------
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "past_chats" not in st.session_state:
-    st.session_state.past_chats = [] 
-#------------------------------
-with st.sidebar:
-    st.title("🤖 Gemini AI")
-    
-    # Nút tạo cuộc trò chuyện mới
-    if st.button("➕ Cuộc trò chuyện mới", use_container_width=True):
-        if st.session_state.messages:
-            # Lấy câu hỏi đầu tiên làm tiêu đề để lưu
-            first_question = st.session_state.messages[0]["content"]
-            title = (first_question[:25] + "...") if len(first_question) > 25 else first_question
-            
-            # Lưu toàn bộ đoạn chat hiện tại vào kho
-            st.session_state.all_chats[title] = st.session_state.messages
-            
-        # Reset để qua trang mới
-        st.session_state.messages = []
-        st.rerun()
 
-    st.markdown("---")
-    st.subheader("📝 Lịch sử trò chuyện")
-    
-    # Hiển thị danh sách các cuộc trò chuyện đã lưu
-    for title in st.session_state.all_chats.keys():
-        if st.sidebar.button(f"• {title}", key=title, use_container_width=True):
-            # Khi nhấn vào tiêu đề, tải lại toàn bộ tin nhắn của đoạn chat đó
-            st.session_state.messages = st.session_state.all_chats[title]
-            st.rerun()
-
-    # Hiển thị tất cả lịch sử đã lưu ra Sidebar
-    for chat_title in st.session_state.past_chats:
-        st.write(f"• {chat_title}")
-    #------------------------------
-    
-
-# Chèn vào dưới dòng st.caption
+# Chèn CSS để làm đẹp giao diện tối (Dark Mode)
 st.markdown("""
 <style>
     .stApp { background-color: #1a1a1a; color: #ffffff; }
@@ -67,73 +16,94 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# --- 2. KHỞI TẠO LỊCH SỬ CHAT (SESSION STATE) ---
+if "all_chats" not in st.session_state:
+    st.session_state.all_chats = {} 
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "past_chats" not in st.session_state:
+    st.session_state.past_chats = [] 
 
+# --- 3. THANH SIDEBAR (QUẢN LÝ LỊCH SỬ) ---
+with st.sidebar:
+    st.title("🤖 Gemini AI")
+    
+    if st.button("➕ Cuộc trò chuyện mới", use_container_width=True):
+        if st.session_state.messages:
+            # Lưu lại cuộc trò chuyện cũ trước khi reset
+            first_q = st.session_state.messages[0]["content"]
+            title = (first_q[:25] + "...") if len(first_q) > 25 else first_q
+            st.session_state.all_chats[title] = st.session_state.messages
+            
+        st.session_state.messages = []
+        st.rerun()
 
-# 2. Cấu hình API Key 
-# 2. Cấu hình API Key và Tự động chọn Model
-# 2. Cấu hình API Key (Chỉ dùng secrets để bảo mật tuyệt đối)
+    st.markdown("---")
+    st.subheader("📝 Lịch sử trò chuyện")
+    
+    for title in st.session_state.all_chats.keys():
+        if st.sidebar.button(f"• {title}", key=title, use_container_width=True):
+            st.session_state.messages = st.session_state.all_chats[title]
+            st.rerun()
+
+# --- 4. CẤU HÌNH API KEY & KHỞI TẠO MODEL ---
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    # Nếu chạy local mà chưa có file secrets.toml thì hiện cảnh báo
-    st.warning("⚠️ Chưa tìm thấy API Key. Nếu chạy local, hãy kiểm tra file secrets.toml")
+    st.warning("⚠️ Chưa tìm thấy API Key trong Secrets.")
     st.stop()
 
-
-
-
-# Cách này giúp lấy đúng model đang hoạt động, tránh lỗi 404 (Not Found)
+# Khởi tạo model DUY NHẤT một lần với System Instruction
 try:
-    # Lấy danh sách các model mà API Key của bạn được phép dùng
+    today = datetime.datetime.now().strftime("%d/%m/%Y")
+    # Lời dặn giúp AI biết ngày tháng mà không nhắc thừa thãi
+    instruction = f"Bạn là một cộng tác viên AI hữu ích. Hôm nay là ngày {today}. Chỉ nhắc đến ngày tháng nếu người dùng hỏi."
+
+    # Tự động chọn model ổn định nhất (Ưu tiên gemini-1.5-flash)
     models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    # Ưu tiên chọn bản flash cho nhanh, nếu không có thì lấy bản đầu tiên trong danh sách
     selected_model = 'models/gemini-1.5-flash' if 'models/gemini-1.5-flash' in models else models[0]
-    model = genai.GenerativeModel(selected_model)
+    
+    model = genai.GenerativeModel(
+        model_name=selected_model,
+        system_instruction=instruction
+    )
 except Exception as e:
-    st.error(f"Lỗi kết nối API: {e}")
+    st.error(f"Lỗi khởi tạo AI: {e}")
+    st.stop()
 
-# 3. Khởi tạo lịch sử chat nếu chưa có
-#if "messages" not in st.session_state:
-    #st.session_state.messages = []
-
-# 4. Hiển thị các tin nhắn cũ từ lịch sử
+# --- 5. HIỂN THỊ CÁC TIN NHẮN CŨ ---
 for message in st.session_state.messages:
     avatar = "🧑‍💻" if message["role"] == "user" else "🤖"
-    with st.chat_message(message["role"],avatar=avatar):
+    with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
-
-
-
-# 5. Xử lý câu hỏi từ người dùng
+# --- 6. XỬ LÝ CÂU HỎI TỪ NGƯỜI DÙNG ---
 if prompt := st.chat_input("Bạn muốn hỏi gì thế?"):
     # Hiển thị tin nhắn người dùng
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user",avatar="🧑‍💻"):
+    with st.chat_message("user", avatar="🧑‍💻"):
         st.markdown(prompt)
 
     # Gửi đến Gemini và nhận phản hồi
     with st.chat_message("assistant", avatar="🤖"):
         with st.spinner("Đang suy nghĩ..."):
             try:
-                # --- THÊM 3 DÒNG NÀY ĐỂ AI BIẾT NGÀY THÁNG ---
-                import datetime
-                today = datetime.datetime.now().strftime("%d/%m/%Y")
-                full_prompt = f"Hôm nay là ngày {today}. {prompt}"
-                # Gửi toàn bộ lịch sử để AI có "ngữ cảnh"
-                full_chat = model.start_chat(history=[
-                    {"role": m["role"] == "assistant" and "model" or "user", "parts": [m["content"]]}
+                # Chuyển đổi lịch sử chat sang định dạng của Google AI
+                history_data = [
+                    {"role": "model" if m["role"] == "assistant" else "user", "parts": [m["content"]]}
                     for m in st.session_state.messages[:-1]
-                ])
-                response = full_chat.send_message(full_prompt)
+                ]
+                
+                chat_session = model.start_chat(history=history_data)
+                response = chat_session.send_message(prompt)
                 
                 st.markdown(response.text)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
+                
             except Exception as e:
-             
                 if "429" in str(e):
                     st.error("⚠️ Bạn hỏi nhanh quá! Đợi 1 phút để Google hồi phục lượt dùng nhé.")
                 elif "403" in str(e):
-                    st.error("🚫 API Key bị khóa. Hãy dán Key mới vào Secrets trên Streamlit.")
+                    st.error("🚫 API Key không hợp lệ hoặc bị khóa.")
                 else:
                     st.error(f"❌ Lỗi hệ thống: {e}")
